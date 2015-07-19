@@ -2,65 +2,45 @@
 
 namespace Ecchi\Guzzle;
 
-use GuzzleHttp\Event\CompleteEvent;
-use GuzzleHttp\Event\RequestEvents;
-use GuzzleHttp\Event\SubscriberInterface;
-use Symfony\Component\DomCrawler\Crawler;
-use Symfony\Component\Process\Exception\ProcessFailedException;
-use Symfony\Component\Process\Process;
+use Ecchi\Util\CloudFlareChallengeSolver;
+use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\ResponseInterface;
 
-class CloudflareSkipper implements SubscriberInterface
+class CloudFlareSkipper
 {
-    public function getEvents()
+    private $challengeSolver;
+
+    private $nextHandler;
+
+    public function __construct(CloudFlareChallengeSolver $challengeSolver, callable $nextHandler)
     {
-        return [
-            'complete' => ['onComplete', RequestEvents::VERIFY_RESPONSE + 1]
-        ];
+        $this->challengeSolver = $challengeSolver;
+        $this->nextHandler     = $nextHandler;
     }
 
-    public function onComplete(CompleteEvent $event)
+    public static function create(CloudFlareChallengeSolver $challengeSolver)
     {
-        if (!$event->hasResponse()) {
-            return;
-        }
+        return function (callable $nextHandler) use ($challengeSolver) {
+            return new self($challengeSolver, $nextHandler);
+        };
+    }
 
-        if ($event->getResponse()->getStatusCode() !== 503) {
-            return;
-        }
+    public function __invoke(RequestInterface $request, array $options)
+    {
+        $fn = $this->nextHandler;
 
-        $response = $event->getResponse();
+        return $fn($request, $options)
+            ->then(function (ResponseInterface $response) use ($request, $options) {
+                if (empty($options[__CLASS__.'_applied']) && $response->getStatusCode() === 503) {
+                    $newRequest = $this->challengeSolver->createRequestFromResponse($request->getUri(), $response);
+                    $options[__CLASS__.'_applied'] = true;
+                    // CF hardened their protection; you have to wait a bit before sending the request.
+                    $options['delay'] = 3000;
 
-        $crawler = new Crawler((string) $response->getBody(), $response->getEffectiveUrl());
+                    return $this($newRequest, $options);
+                }
 
-        // Get the challenge, should be a simple arithmetic expression.
-        preg_match('/var t,r,a,f, ((\w+)=\{.*;)/', (string) $response->getBody(), $match);
-        $row1 = $match[1];
-        preg_match('/'.$match[2].'\..*;/', (string) $response->getBody(), $match);
-        $row2 = $match[0];
-        $js   = <<<JAVASCRIPT
-t = 'javjunkies.com';
-a = {
-  value: ''
-};
-$row1
-$row2
-console.log(a.value);
-JAVASCRIPT;
-
-        $process = new Process('node', null, null, $js, 5);
-        $process->run();
-
-        if (!$process->isSuccessful()) {
-            throw new ProcessFailedException($process);
-        }
-
-        $challenge  = trim($process->getOutput());
-        $form       = $crawler->filter('#challenge-form')->form(['jschl_answer' => $challenge]);
-        $newRequest = $event->getClient()->createRequest($form->getMethod(), $form->getUri());
-        $newRequest->setHeader('referer', $response->getEffectiveUrl());
-
-        $newResponse = $event->getClient()->send($newRequest);
-
-        $event->intercept($newResponse);
+                return $response;
+            });
     }
 }

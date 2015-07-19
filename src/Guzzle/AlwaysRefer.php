@@ -2,29 +2,32 @@
 
 namespace Ecchi\Guzzle;
 
-use GuzzleHttp\Event\BeforeEvent;
-use GuzzleHttp\Event\SubscriberInterface;
+use Psr\Http\Message\RequestInterface;
 
-class AlwaysRefer implements SubscriberInterface
+class AlwaysRefer
 {
+    private $nextHandler;
 
     private $lastReferrer;
 
-    public function getEvents()
+    public function __construct(callable $nextHandler)
     {
-        return [
-            'before' => ['onBefore'],
-        ];
+        $this->nextHandler = $nextHandler;
     }
 
-    public function onBefore(BeforeEvent $event)
+    public static function create()
     {
-        $request = $event->getRequest();
+        return function (callable $nextHandler) {
+            return new self($nextHandler);
+        };
+    }
 
-        if ($this->lastReferrer === null) {
-            $this->lastReferrer = $request->getUrl();
-        }
-        $request->setHeader('referer', $this->lastReferrer);
-        $this->lastReferrer = $request->getUrl();
+    public function __invoke(RequestInterface $request, array $options)
+    {
+        $fn                 = $this->nextHandler;
+        $referrer           = $this->lastReferrer;
+        $this->lastReferrer = $request->getUri()->__toString();
+
+        return $fn($request->withHeader('referer', $referrer), $options);
     }
 }

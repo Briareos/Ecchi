@@ -1,0 +1,55 @@
+<?xml version="1.0" ?>
+
+<container xmlns="http://symfony.com/schema/dic/services"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="http://symfony.com/schema/dic/services http://symfony.com/schema/dic/services/services-1.0.xsd">
+
+    <services>
+        <service id="client.middleware.attach_cookie_jar" class="Closure" factory-class="Ecchi\Guzzle\AttachCookieJar" factory-method="create" public="false">
+            <argument type="service" id="client.cookie_jar"/>
+        </service>
+        <service id="guzzle.middleware.udp_logger" class="Closure" factory-class="Ecchi\Guzzle\UdpLogger" factory-method="create" public="false">
+            <argument>127.0.0.1</argument>
+            <argument>1337</argument>
+        </service>
+        <service id="client.middleware.always_refer" class="Closure" factory-class="Ecchi\Guzzle\AlwaysRefer" factory-method="create" public="false">
+        </service>
+        <service id="client.middleware.shadow_browser" class="Closure" factory-class="Ecchi\Guzzle\ShadowBrowser" factory-method="create" public="false">
+        </service>
+        <service id="client.middleware.cloudflare_skipper" class="Closure" factory-class="Ecchi\Guzzle\CloudFlareSkipper" factory-method="create" public="false">
+            <argument type="service" id="cloudflare_challenge_solver"/>
+        </service>
+        <service id="client.handler_stack" class="GuzzleHttp\HandlerStack" factory-class="GuzzleHttp\HandlerStack" factory-method="create" public="false">
+            <call method="before">
+                <argument>cookies</argument>
+                <argument type="service" id="client.middleware.attach_cookie_jar"/>
+                <argument>attach_cookie_jar</argument>
+            </call>
+            <call method="push">
+                <argument type="service" id="client.middleware.cloudflare_skipper"/>
+                <argument>cloudflare_skipper</argument>
+            </call>
+            <call method="push">
+                <argument type="service" id="client.middleware.shadow_browser"/>
+                <argument>shadow_browser</argument>
+            </call>
+            <call method="push">
+                <argument type="service" id="client.middleware.always_refer"/>
+                <argument>always_refer</argument>
+            </call>
+            <call method="push">
+                <argument type="service" id="guzzle.middleware.udp_logger"/>
+                <argument>udp_logger</argument>
+            </call>
+        </service>
+        <service id="client.cookie_jar" class="GuzzleHttp\Cookie\FileCookieJar" public="false">
+            <argument>%kernel.cache_dir%/cookies.txt</argument>
+        </service>
+        <service id="client" class="GuzzleHttp\Client">
+            <argument type="collection">
+                <argument key="handler" type="service" id="client.handler_stack"/>
+            </argument>
+        </service>
+    </services>
+
+</container>

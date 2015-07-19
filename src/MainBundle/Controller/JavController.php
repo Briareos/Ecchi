@@ -2,7 +2,7 @@
 
 namespace Ecchi\MainBundle\Controller;
 
-use GuzzleHttp\Message\ResponseInterface;
+use Psr\Http\Message\ResponseInterface;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Method;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Route;
 use Symfony\Bundle\FrameworkBundle\Controller\Controller;
@@ -23,7 +23,7 @@ class JavController extends Controller
 
         $search = $request->query->get('search');
         $page   = $request->query->getInt('page', 1);
-        $url    = sprintf('http://javjunkies.com/main/%s/%s/page/%d/', ($this->isCategory($search) ? 'tag' : 'search'), urlencode(str_replace([' ', '-'], ['_', ''], $search)), $page);
+        $url    = sprintf('http://www.javjunkies.com/main/%s/%s/page/%d/', ($this->isCategory($search) ? 'tag' : 'search'), urlencode(str_replace([' ', '-'], ['_', ''], $search)), $page);
 
         /** @var ResponseInterface $res */
         $res = $client->get($url, [
@@ -40,23 +40,22 @@ class JavController extends Controller
         }
 
         $posts = [];
-        preg_match('{http://www\.javjunkies\.com/main/JO\.php\?kEy=\d+}', $crawler->html(), $match);
-        file_put_contents('temp.html', $crawler->html());
+        preg_match('{http://www\.javjunkies\.com/main/J0\.php\?kEy=\d+}', $crawler->html(), $match);
         $root = $match[0];
         foreach ($postList as $post) {
             $addPost        = $this->getPostInfo(new Crawler($post), $root);
-            $infoResponse    = $client->get($addPost['raw']);
-            $addPost['raw'] = sprintf('<img src="data:image/png;base64,%s"/>', base64_encode((string)$infoResponse->getBody()));
+            $infoResponse   = $client->get($addPost['raw']);
+            $addPost['raw'] = sprintf('<img src="data:image/png;base64,%s"/>', base64_encode((string) $infoResponse->getBody()));
 
-            if (parse_url($addPost['image'], PHP_URL_HOST) === 'javjunkies.com') {
+            if (parse_url($addPost['image'], PHP_URL_HOST) === 'www.javjunkies.com') {
                 /** @var ResponseInterface $imageResponse */
-                $imageResponse = $client->get($addPost['image'], [
+                $imageResponse    = $client->get($addPost['image'], [
                     'allow_redirects' => false,
-                    'headers' => [
+                    'headers'         => [
                         'referer' => $url,
                     ],
                 ]);
-                $addPost['image'] = $imageResponse->getHeader('location');
+                $addPost['image'] = $imageResponse->getHeaderLine('location');
             }
             $posts[] = $addPost;
         }
@@ -75,14 +74,12 @@ class JavController extends Controller
     {
         $client = $this->get('client');
 
-        $url     = $request->query->get('download');
-        $referer = $request->query->get('referer');
-        $name    = $request->query->get('name');
+        $url      = $request->query->get('download');
+        $referrer = $request->query->get('referer');
+        $name     = $request->query->get('name');
 
-        $req = $client->createRequest('GET', $url, [
-            'headers' => [
-                'referrer' => $referer,
-            ],
+        $req = new \GuzzleHttp\Psr7\Request('GET', $url, [
+            'referrer' => $referrer,
         ]);
 
         return new StreamedResponse(function () use ($client, $req) {
@@ -157,7 +154,7 @@ class JavController extends Controller
             "fist",
             "tentacle",
             "cherry-boy",
-            "ca"
+            "ca",
         ];
 
         return in_array(strtolower($term), $categories);
@@ -171,7 +168,7 @@ class JavController extends Controller
         if (preg_match('{^https?://}', $match[1])) {
             $post['image'] = $match[1];
         } else {
-            $post['image'] = 'http://javjunkies.com'.$match[1];
+            $post['image'] = 'http://www.javjunkies.com'.$match[1];
         }
 
         preg_match('{"(.*)"}', $crawler->filter('.iH script')->html(), $match);
@@ -179,7 +176,7 @@ class JavController extends Controller
 
         preg_match('{i=([^"]+)"}', $rawInfo, $match);
 
-        $post['raw'] = 'http://javjunkies.com/main/ij/i/'.$match[1].'.png';
+        $post['raw'] = 'http://www.javjunkies.com/main/ij/i/'.$match[1].'.png';
 
         try {
             preg_match("{'(.*)'}", $crawler->filter('a:first-child')->attr('onclick'), $match);

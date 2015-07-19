@@ -2,41 +2,58 @@
 
 namespace Ecchi\Guzzle;
 
-use GuzzleHttp\Event\BeforeEvent;
-use GuzzleHttp\Event\CompleteEvent;
-use GuzzleHttp\Event\RequestEvents;
-use GuzzleHttp\Event\SubscriberInterface;
+use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Promise\RejectedPromise;
+use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\ResponseInterface;
 
-class UdpLogger implements SubscriberInterface
+class UdpLogger
 {
 
     private $address;
 
     private $port;
 
+    private $nextHandler;
+
     private $socket;
 
-    function __construct($address, $port)
+    function __construct($address, $port, callable $nextHandler)
     {
-        $this->address = $address;
-        $this->port    = $port;
+        $this->address     = $address;
+        $this->port        = $port;
+        $this->nextHandler = $nextHandler;
     }
 
-    public function getEvents()
+    public static function create($address, $port)
     {
-        return [
-            'complete' => ['onComplete', RequestEvents::VERIFY_RESPONSE + 100],
-        ];
+        return function (callable $nextHandler) use ($address, $port) {
+            return new self($address, $port, $nextHandler);
+        };
     }
 
-    public function onComplete(CompleteEvent $event)
+    function __invoke(RequestInterface $request, array $options)
     {
-        $this->log($event->getRequest()->__toString());
+        $fn = $this->nextHandler;
 
-        if (!$event->hasResponse()) {
-            return;
-        }
-        $this->log($event->getResponse()->__toString());
+        $this->log(\GuzzleHttp\Psr7\str($request));
+
+        return $fn($request, $options)
+            ->then(function (ResponseInterface $response) {
+                $this->log(\GuzzleHttp\Psr7\str($response));
+
+                return $response;
+            }, function ($reason) {
+                if ($reason instanceof RequestException && $response = $reason->getResponse()) {
+                    $this->log(\GuzzleHttp\Psr7\str($response));
+                } elseif ($reason instanceof \Exception) {
+                    $this->log($reason->getMessage());
+                } else {
+                    $this->log('Transfer error');
+                }
+
+                return new RejectedPromise($reason);
+            });
     }
 
     private function log($message)

@@ -5,44 +5,6 @@
            xsi:schemaLocation="http://symfony.com/schema/dic/services http://symfony.com/schema/dic/services/services-1.0.xsd">
 
     <services>
-        <service id="client.subscriber.udp_logger" class="Ecchi\Guzzle\UdpLogger">
-            <argument>127.0.0.1</argument>
-            <argument>1337</argument>
-        </service>
-        <service id="client.subscriber.shadow_browser" class="Ecchi\Guzzle\ShadowBrowser" public="false">
-        </service>
-        <service id="client.subscriber.always_refer" class="Ecchi\Guzzle\AlwaysRefer" public="false">
-        </service>
-        <service id="client.cookie_jar" class="GuzzleHttp\Cookie\FileCookieJar" public="false">
-            <argument>%kernel.cache_dir%/cookies.txt</argument>
-        </service>
-        <service id="client.subscriber.cloudflare_skipper" class="Ecchi\Guzzle\CloudflareSkipper" public="false">
-        </service>
-        <service id="client.subscriber.cookie" class="GuzzleHttp\Subscriber\Cookie" public="false">
-            <argument type="service" id="client.cookie_jar"/>
-        </service>
-        <service id="client.emitter" class="GuzzleHttp\Event\Emitter" public="false">
-            <call method="attach">
-                <argument type="service" id="client.subscriber.cookie"/>
-            </call>
-            <call method="attach">
-                <argument type="service" id="client.subscriber.cloudflare_skipper"/>
-            </call>
-            <call method="attach">
-                <argument type="service" id="client.subscriber.always_refer"/>
-            </call>
-            <call method="attach">
-                <argument type="service" id="client.subscriber.shadow_browser"/>
-            </call>
-            <call method="attach">
-                <argument type="service" id="client.subscriber.udp_logger"/>
-            </call>
-        </service>
-        <service id="client" class="GuzzleHttp\Client">
-            <argument type="collection">
-                <argument key="emitter" type="service" id="client.emitter"/>
-            </argument>
-        </service>
         <service id="assetic.filter.angular_app" class="Ecchi\Assetic\Filter\AngularAppFilter">
             <call method="setTwig">
                 <argument type="service" id="twig"/>
@@ -52,6 +14,9 @@
 
         <service id="serializer.get_set_method_normalizer" class="Symfony\Component\Serializer\Normalizer\GetSetMethodNormalizer">
             <tag name="serializer.normalizer"/>
+        </service>
+
+        <service id="cloudflare_challenge_solver" class="Ecchi\Util\CloudFlareChallengeSolver">
         </service>
     </services>
 

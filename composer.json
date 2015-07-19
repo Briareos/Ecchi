@@ -23,7 +23,7 @@
         "sensio/distribution-bundle": "3.0.*",
         "sensio/framework-extra-bundle": "3.0.*",
         "incenteev/composer-parameter-handler": "~2.1",
-        "guzzlehttp/guzzle": "5.2.*",
+        "guzzlehttp/guzzle": "6.0.*",
         "friendsofsymfony/rest-bundle": "1.5.*",
         "symfony/serializer": "2.6.*"
     },

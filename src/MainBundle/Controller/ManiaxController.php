@@ -4,6 +4,7 @@ namespace Ecchi\MainBundle\Controller;
 
 use GuzzleHttp\Event\EndEvent;
 use GuzzleHttp\Pool;
+use Psr\Http\Message\ResponseInterface;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Route;
 use Symfony\Bundle\FrameworkBundle\Controller\Controller;
 use Symfony\Component\DomCrawler\Crawler;
@@ -44,28 +45,31 @@ class ManiaxController extends Controller
         $info = $this->infoFactory($id);
 
         $requests = [
-            $client->createRequest('GET', $info->urlJp, ['config' => ['language' => 'jp']]),
-            $client->createRequest('GET', $info->urlEn, ['config' => ['language' => 'en']]),
-        ];
-
-        Pool::send($client, $requests, [
-            'end' => function (EndEvent $event) use ($info) {
-                $language = $event->getRequest()->getConfig()->getPath('language');
-                if ($event->getException()) {
-                    $info->{'url'.ucfirst($language)} = null;
-
-                    return;
-                }
-
-                if ($language === 'en' || empty($info->name)) {
-                    // Only set the Japanese info if we don't already have English info.
-                    $crawler     = new Crawler((string) $event->getResponse()->getBody(), $event->getResponse()->getEffectiveUrl());
+            $client->getAsync($info->urlJp)
+                ->then(function (ResponseInterface $response) use ($info) {
+                    if (!empty($info->name)) {
+                        // Only set the Japanese info if we don't already have English info.
+                        return;
+                    }
+                    $crawler     = new Crawler($response->getBody()->__toString(), $info->urlJp);
                     $data        = $this->getCrawlerInfo($crawler);
                     $info->name  = $data['name'];
                     $info->brand = $data['brand'];
-                }
-            },
-        ]);
+                }, function () use ($info) {
+                    $info->urlJp = null;
+                }),
+            $client->getAsync($info->urlEn)
+                ->then(function (ResponseInterface $response) use ($info) {
+                    $crawler     = new Crawler($response->getBody()->__toString(), $info->urlEn);
+                    $data        = $this->getCrawlerInfo($crawler);
+                    $info->name  = $data['name'];
+                    $info->brand = $data['brand'];
+                }, function () use ($info) {
+                    $info->urlEn = null;
+                }),
+        ];
+
+        \GuzzleHttp\Promise\settle($requests)->wait();
 
         return $info;
     }
@@ -114,38 +118,31 @@ class ManiaxController extends Controller
         $url = sprintf('http://www.dlsite.com/maniax/fsr/=/language/jp/sex_category%%5B0%%5D/male/keyword/%s/per_page/30/from/fs.header', rawurlencode($search));
 
         $response = $client->get($url);
-        $crawler  = new Crawler((string) $response->getBody(), $response->getEffectiveUrl());
+        $crawler  = new Crawler((string) $response->getBody(), $url);
         $nodes    = $crawler->filter('#search_result_list>table>tr:nth-child(odd)');
 
         $requests = [];
 
         foreach ($nodes as $node) {
-            $nodeInfo = new Crawler($node, $response->getEffectiveUrl());
+            $nodeInfo = new Crawler($node, $url);
             // ID looks something like _link_RJ152171
-            $id            = substr($nodeInfo->filter('div.work_thumb>a')->attr('id'), 8);
-            $info          = $this->infoFactory($id);
-            $info->name    = trim($nodeInfo->filter('dt.work_name>a')->text());
-            $info->brand   = trim($nodeInfo->filter('dd.maker_name>a')->text());
-            $infoList[$id] = $info;
+            $id          = substr($nodeInfo->filter('div.work_thumb>a')->attr('id'), 8);
+            $info        = $this->infoFactory($id);
+            $info->name  = trim($nodeInfo->filter('dt.work_name>a')->text());
+            $info->brand = trim($nodeInfo->filter('dd.maker_name>a')->text());
+            $infoList[]  = $info;
 
-            $requests[] = $client->createRequest('GET', $info->urlEn, ['config' => ['id' => $id]]);
+            $requests[] = $client->getAsync($info->urlEn)
+                ->then(function (ResponseInterface $response) use ($info) {
+                    $data        = $this->getCrawlerInfo(new Crawler($response->getBody()->__toString(), $info->urlEn));
+                    $info->name  = $data['name'];
+                    $info->brand = $data['brand'];
+                }, function () use ($info) {
+                    $info->urlEn = null;
+                });
         }
 
-        Pool::send($client, $requests, [
-            'end' => function (EndEvent $event) use ($infoList) {
-                $id   = $event->getRequest()->getConfig()->getPath('id');
-                $info = $infoList[$id];
-
-                if ($event->getException()) {
-                    $info->urlEn = null;
-                    return;
-                }
-
-                $data        = $this->getCrawlerInfo(new Crawler((string) $event->getResponse()->getBody(), $event->getResponse()->getEffectiveUrl()));
-                $info->name  = $data['name'];
-                $info->brand = $data['brand'];
-            },
-        ]);
+        \GuzzleHttp\Promise\settle($requests)->wait();
 
         return array_values($infoList);
     }

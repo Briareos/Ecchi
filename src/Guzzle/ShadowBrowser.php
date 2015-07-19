@@ -2,13 +2,12 @@
 
 namespace Ecchi\Guzzle;
 
-use GuzzleHttp\Event\BeforeEvent;
-use GuzzleHttp\Event\SubscriberInterface;
+use Psr\Http\Message\RequestInterface;
 
 /**
  * Simulates regular browser by sending some additional headers.
  */
-class ShadowBrowser implements SubscriberInterface
+class ShadowBrowser
 {
 
     protected static $defaultHeaders = [
@@ -21,29 +20,30 @@ class ShadowBrowser implements SubscriberInterface
 
     private $headers = [];
 
-    public function __construct(array $headers = null)
+    private $nextHandler;
+
+    public function __construct(array $headers = null, callable $nextHandler)
     {
         if ($headers === null) {
             $this->headers = static::$defaultHeaders;
-
-            return;
+        } else {
+            $this->headers = $headers;
         }
 
-        $this->headers = $headers;
+        $this->nextHandler = $nextHandler;
     }
 
-    public function getEvents()
+    public static function create(array $headers = null)
     {
-        return [
-            'before' => ['onBefore'],
-        ];
+        return function (callable $nextHandler) use ($headers) {
+            return new self($headers, $nextHandler);
+        };
     }
 
-    public function onBefore(BeforeEvent $event)
+    public function __invoke(RequestInterface $request, array $options)
     {
-        $request = $event->getRequest();
-        foreach ($this->headers as $headerName => $headerValue) {
-            $request->setHeader($headerName, $headerValue);
-        }
+        $fn = $this->nextHandler;
+
+        return $fn(\GuzzleHttp\Psr7\modify_request($request, ['set_headers' => $this->headers]), $options);
     }
 }
